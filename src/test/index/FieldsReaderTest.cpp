@@ -22,6 +22,8 @@
 #include "IndexReader.h"
 #include "MiscUtils.h"
 #include "FileUtils.h"
+#include "IndexFileNames.h"
+#include "IndexOutput.h"
 
 using namespace Lucene;
 
@@ -376,6 +378,43 @@ public:
     }
 };
 
+}
+
+static void writeCorruptedStoredFieldsIndex(const DirectoryPtr& sourceDir,
+                                            const DirectoryPtr& corruptDir,
+                                            const String& segmentName)
+{
+    String fieldsName = segmentName + L"." + IndexFileNames::FIELDS_EXTENSION();
+    IndexInputPtr in = sourceDir->openInput(fieldsName);
+    ByteArray data(ByteArray::newInstance((int32_t)in->length()));
+    in->readBytes(data.get(), 0, (int32_t)in->length());
+    in->close();
+
+    // Overwrite the first stored field number with an invalid VInt.
+    data[5] = 0x7f;
+    data[6] = 0x7f;
+
+    IndexOutputPtr out = corruptDir->createOutput(fieldsName);
+    out->writeBytes(data.get(), 0, (int32_t)data.size());
+    out->close();
+}
+
+TEST_F(FieldsReaderTest, testCorruptFieldNumber) {
+    String indexDir(FileUtils::joinPath(getTempDir(), L"testfieldreaderbadfieldnumber"));
+    RAMDirectoryPtr sourceDir = newLucene<RAMDirectory>();
+    IndexWriterPtr writer = newLucene<IndexWriter>(sourceDir, newLucene<WhitespaceAnalyzer>(), true, IndexWriter::MaxFieldLengthLIMITED);
+    writer->setUseCompoundFile(false);
+    writer->addDocument(testDoc);
+    writer->close();
+
+    RAMDirectoryPtr corruptDir = newLucene<RAMDirectory>(sourceDir);
+    writeCorruptedStoredFieldsIndex(sourceDir, corruptDir, TEST_SEGMENT_NAME);
+
+    FieldsReaderPtr reader = newLucene<FieldsReader>(corruptDir, TEST_SEGMENT_NAME, fieldInfos);
+    EXPECT_THROW(reader->doc(0, FieldSelectorPtr()), CorruptIndexException);
+    reader->close();
+    sourceDir->close();
+    corruptDir->close();
 }
 
 TEST_F(FieldsReaderTest, testLoadSize) {

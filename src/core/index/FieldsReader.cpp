@@ -168,6 +168,10 @@ DocumentPtr FieldsReader::doc(int32_t n, const FieldSelectorPtr& fieldSelector) 
     for (int32_t i = 0; i < numFields; ++i) {
         int32_t fieldNumber = fieldsStream->readVInt();
         FieldInfoPtr fi = fieldInfos->fieldInfo(fieldNumber);
+        if (!fi) {
+            boost::throw_exception(CorruptIndexException(L"invalid field number " + StringUtils::toString(fieldNumber)
+                                                         + L" while reading stored fields for doc " + StringUtils::toString(n)));
+        }
         FieldSelector::FieldSelectorResult acceptField = fieldSelector ? fieldSelector->accept(fi->name) : FieldSelector::SELECTOR_LOAD;
 
         uint8_t bits = fieldsStream->readByte();
